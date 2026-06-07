@@ -1,0 +1,186 @@
+import requests
+import sqlite3
+import os
+import time
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
+from pathlib import Path
+
+load_dotenv(dotenv_path=Path(__file__).parent.parent / '.env')
+
+API_KEY       = os.getenv('DATA4LIBRARY_API_KEY')
+ALADIN_KEY    = os.getenv('ALADIN_API_KEY')
+NAVER_ID      = os.getenv('NAVER_CLIENT_ID')
+NAVER_SECRET  = os.getenv('NAVER_CLIENT_SECRET')
+
+DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'library.db')
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                  'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
+
+
+# ─────────────────────────────────────────
+# 1. 정보나루 API — 경제 인기 대출 도서
+# ─────────────────────────────────────────
+def fetch_books_from_library(page_size=200):
+    """정보나루 loanItemSrch: dtl_kdc로 경제 인기대출 도서"""
+    url = 'http://data4library.kr/api/loanItemSrch'
+    params = {
+        'authKey': API_KEY,
+        'startDt': '2025-01-01',
+        'endDt': '2026-06-06',
+        'dtl_kdc': '32',
+        'pageSize': page_size,
+        'format': 'json'
+    }
+    resp = requests.get(url, params=params, timeout=10)
+    data = resp.json()
+    docs = data.get('response', {}).get('docs', [])
+    print(f"  정보나루 수집: {len(docs)}권")
+    return docs
+
+
+# ─────────────────────────────────────────
+# 2. 네이버 도서 API — 책 소개
+# ─────────────────────────────────────────
+def fetch_naver_description(isbn: str) -> str:
+    url = 'https://openapi.naver.com/v1/search/book_adv.json'
+    headers = {
+        'X-Naver-Client-Id': NAVER_ID,
+        'X-Naver-Client-Secret': NAVER_SECRET,
+    }
+    try:
+        resp = requests.get(url, headers=headers,
+                            params={'d_isbn': isbn}, timeout=5)
+        items = resp.json().get('items', [])
+        if items:
+            return items[0].get('description', '')
+    except Exception as e:
+        print(f"    네이버 API 오류 ({isbn}): {e}")
+    return ''
+
+
+# ─────────────────────────────────────────
+# 3. 알라딘 API — 판매지수
+# ─────────────────────────────────────────
+def fetch_sales_point(isbn: str) -> int:
+    url = 'http://www.aladin.co.kr/ttb/api/ItemLookUp.aspx'
+    params = {
+        'ttbkey': ALADIN_KEY,
+        'itemIdType': 'ISBN13',
+        'ItemId': isbn,
+        'output': 'js',
+        'Version': '20131101',
+    }
+    try:
+        resp = requests.get(url, params=params, timeout=5)
+        items = resp.json().get('item', [])
+        if items:
+            return items[0].get('salesPoint', 0)
+    except Exception as e:
+        print(f"    알라딘 API 오류 ({isbn}): {e}")
+    return 0
+
+
+# ─────────────────────────────────────────
+# 4. 정보나루 이달의키워드 크롤링 ← 크롤링 요건
+# ─────────────────────────────────────────
+def crawl_monthly_keywords() -> list:
+    """정보나루 이달의키워드 페이지 크롤링 → [{keyword, count, month}]"""
+    url = 'https://data4library.kr/monthlyKeyword'
+    results = []
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(resp.text, 'lxml')
+
+        # 키워드 항목 파싱 (실제 HTML 구조에 맞게)
+        items = soup.select('.keyword_list li') or soup.select('.kwd_list li')
+        for item in items:
+            keyword = item.get_text(strip=True)
+            if keyword:
+                results.append(keyword)
+
+        # 날짜/제목 파악
+        title = soup.select_one('h2, h3, .month_title')
+        month = title.get_text(strip=True) if title else '2026-06'
+
+        print(f"  이달의키워드 크롤링: {len(results)}개 ({month})")
+    except Exception as e:
+        print(f"  이달의키워드 크롤링 오류: {e}")
+    return results
+
+
+# ─────────────────────────────────────────
+# 5. DB 저장
+# ─────────────────────────────────────────
+def save_books(docs: list):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    cursor.execute('SELECT isbn FROM raw_books')
+    existing = {row[0] for row in cursor.fetchall()}
+
+    saved = 0
+    for item in docs:
+        doc = item.get('doc', {})
+        isbn      = doc.get('isbn13', '').strip()
+        title     = doc.get('bookname', '').strip()
+        author    = doc.get('authors', '').strip()
+        class_no  = doc.get('class_no', '').strip()
+        loan_count = int(doc.get('loan_count', 0) or 0)
+
+        if not isbn or not title:
+            continue
+        if isbn in existing:
+            continue
+
+        print(f"  [{saved+1}] {title[:30]}")
+
+        # 네이버 API로 소개 수집
+        description = fetch_naver_description(isbn)
+        time.sleep(0.3)
+
+        # 알라딘 API로 판매지수
+        sales_point = fetch_sales_point(isbn)
+        time.sleep(0.3)
+
+        cursor.execute('''
+            INSERT OR IGNORE INTO raw_books
+            (isbn, title, author, description,
+             loan_count, class_no, sales_point)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (isbn, title, author, description,
+              loan_count, class_no, sales_point))
+
+        existing.add(isbn)
+        saved += 1
+
+    conn.commit()
+    conn.close()
+    print(f"\n도서 저장 완료: {saved}권")
+
+
+# ─────────────────────────────────────────
+# 6. 메인
+# ─────────────────────────────────────────
+def extract():
+    print("=== 수집 시작 ===")
+
+    # 이달의 키워드 크롤링 (크롤링 요건 충족)
+    print("\n[1] 이달의키워드 크롤링")
+    keywords = crawl_monthly_keywords()
+    if keywords:
+        print(f"  키워드 샘플: {keywords[:5]}")
+
+    # 경제 도서 수집
+    print("\n[2] 경제 도서 수집 (정보나루 + 네이버 + 알라딘)")
+    docs = fetch_books_from_library(page_size=200)
+    save_books(docs)
+
+    print("\n=== 수집 완료 ===")
+
+
+if __name__ == '__main__':
+    extract()
