@@ -126,6 +126,22 @@ def crawl_monthly_keywords() -> list:
 # ─────────────────────────────────────────
 # 5. DB 저장
 # ─────────────────────────────────────────
+
+def save_keywords(keywords: list):
+    """크롤링한 키워드를 DB에 저장"""
+    if not keywords:
+        return
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    for kw in keywords:
+        cursor.execute('''
+            INSERT INTO monthly_keywords (rank, keyword, weight)
+            VALUES (?, ?, ?)
+        ''', (kw['rank'], kw['keyword'], kw['weight']))
+    conn.commit()
+    conn.close()
+    print(f"  키워드 {len(keywords)}개 DB 저장 완료")
+
 def save_books(docs: list):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -184,6 +200,7 @@ def extract():
     keywords = crawl_monthly_keywords()
     if keywords:
         print(f"  키워드 샘플: {keywords[:5]}")
+        save_keywords(keywords)
 
     # 경제 도서 수집
     print("\n[2] 경제 도서 수집 (정보나루 + 네이버 + 알라딘)")

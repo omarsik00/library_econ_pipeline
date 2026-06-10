@@ -26,6 +26,17 @@ def init_db():
         )
     ''')
 
+        # 이달의 키워드 (크롤링)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS monthly_keywords (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            rank       INTEGER,
+            keyword    TEXT,
+            weight     REAL,
+            crawled_at TEXT DEFAULT (datetime('now', 'localtime'))
+        )
+    ''')
+
     # 활용 레이어: AI 분류 결과
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mart_books (
