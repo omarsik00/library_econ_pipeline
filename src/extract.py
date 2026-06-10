@@ -5,6 +5,7 @@ import time
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from pathlib import Path
+from bs4 import BeautifulSoup, NavigableString
 
 load_dotenv(dotenv_path=Path(__file__).parent.parent / '.env')
 
@@ -88,27 +89,37 @@ def fetch_sales_point(isbn: str) -> int:
 # 4. 정보나루 이달의키워드 크롤링 ← 크롤링 요건
 # ─────────────────────────────────────────
 def crawl_monthly_keywords() -> list:
-    """정보나루 이달의키워드 페이지 크롤링 → [{keyword, count, month}]"""
-    url = 'https://data4library.kr/monthlyKeyword'
+    """정보나루 이달의키워드 페이지 크롤링 → [{rank, keyword, weight}]"""
+    url = 'https://data4library.kr/thema/monthlyKeywords'
     results = []
     try:
         resp = requests.get(url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(resp.text, 'lxml')
 
-        # 키워드 항목 파싱 (실제 HTML 구조에 맞게)
-        items = soup.select('.keyword_list li') or soup.select('.kwd_list li')
-        for item in items:
-            keyword = item.get_text(strip=True)
-            if keyword:
-                results.append(keyword)
+        for li in soup.find_all('li'):
+            em = li.find('em')
+            span = li.find('span')
+            if em and span:
+                keyword = ''.join(
+                    str(node).strip()
+                    for node in li.children
+                    if isinstance(node, NavigableString)
+                ).strip()
+                weight = em.get_text(strip=True)
+                rank = span.get_text(strip=True)
+                if keyword:
+                    results.append({
+                        'rank': int(rank),
+                        'keyword': keyword,
+                        'weight': float(weight)
+                    })
 
-        # 날짜/제목 파악
-        title = soup.select_one('h2, h3, .month_title')
-        month = title.get_text(strip=True) if title else '2026-06'
+        print(f"  이달의키워드 크롤링: {len(results)}개")
+        if results:
+            print(f"  샘플: {[r['keyword'] for r in results[:3]]}")
 
-        print(f"  이달의키워드 크롤링: {len(results)}개 ({month})")
     except Exception as e:
-        print(f"  이달의키워드 크롤링 오류: {e}")
+        print(f"  크롤링 오류: {e}")
     return results
 
 
