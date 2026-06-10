@@ -84,6 +84,40 @@ def fetch_sales_point(isbn: str) -> int:
         print(f"    알라딘 API 오류 ({isbn}): {e}")
     return 0
 
+# ─────────────────────────────────────────
+# YES24 크롤링 — 목차 수집
+# ─────────────────────────────────────────
+def crawl_yes24_toc(isbn: str) -> str:
+    """YES24 상품페이지에서 전체 목차 크롤링"""
+    try:
+        # 1. ISBN 검색
+        search_url = f'https://www.yes24.com/Product/Search?domain=BOOK&query={isbn}'
+        resp = requests.get(search_url, headers=HEADERS, timeout=8)
+        soup = BeautifulSoup(resp.text, 'lxml')
+
+        link = soup.select_one('a.gd_name')
+        if not link:
+            return ''
+
+        # 2. 상품 페이지
+        product_url = 'https://www.yes24.com' + link['href']
+        time.sleep(1)
+        resp2 = requests.get(product_url, headers=HEADERS, timeout=8)
+        soup2 = BeautifulSoup(resp2.text, 'lxml')
+
+        # 3. 목차 추출 (전체, 자르지 않음)
+        toc_div = soup2.select_one('#infoset_toc')
+        if toc_div:
+            for br in toc_div.find_all('br'):
+                br.replace_with('\n')
+            text = toc_div.get_text(strip=False)
+            text = text.replace('목차', '', 1).strip()
+            # 맨 끝 "펼쳐보기접어보기" 제거
+            text = text.replace('펼쳐보기접어보기', '').strip()
+            return text
+    except Exception as e:
+        print(f"    YES24 오류 ({isbn}): {e}")
+    return ''
 
 # ─────────────────────────────────────────
 # 4. 정보나루 이달의키워드 크롤링 ← 크롤링 요건
