@@ -70,6 +70,22 @@ with tab1:
     st.bar_chart(age_counts)
     st.caption("어린이 도서는 도서 탐색 탭에서 따로 조회할 수 있어요.")
 
+    st.divider()
+    if st.button("📄 리포트 생성 (마크다운)"):
+        import sys
+        sys.path.append(os.path.dirname(__file__))
+        from report import generate_report
+        filepath = generate_report()
+        st.success(f"리포트 저장 완료: `{filepath}`")
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        st.download_button(
+            label="⬇️ 리포트 다운로드",
+            data=content,
+            file_name=os.path.basename(filepath),
+            mime='text/markdown'
+        )
+
 # ────────────────────────────────────────────────────
 # 탭 2: AI 분류 검증
 # ────────────────────────────────────────────────────
@@ -205,3 +221,4 @@ with tab4:
         )
     else:
         st.warning("키워드 데이터가 없습니다.")
+
