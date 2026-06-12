@@ -26,7 +26,7 @@ def init_db():
         )
     ''')
 
-        # 이달의 키워드 (크롤링)
+        # 정보나루 달의 키워드 (크롤링)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS monthly_keywords (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,

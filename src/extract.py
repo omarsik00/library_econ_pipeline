@@ -7,16 +7,18 @@ from dotenv import load_dotenv
 from pathlib import Path
 from bs4 import BeautifulSoup, NavigableString
 
-load_dotenv(dotenv_path=Path(__file__).parent.parent / '.env')
+load_dotenv(
+    dotenv_path=Path(__file__).parent.parent / '.env' #/project/.env
+    ) 
 
 API_KEY       = os.getenv('DATA4LIBRARY_API_KEY')
 ALADIN_KEY    = os.getenv('ALADIN_API_KEY')
 NAVER_ID      = os.getenv('NAVER_CLIENT_ID')
 NAVER_SECRET  = os.getenv('NAVER_CLIENT_SECRET')
 
-DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'library.db')
+DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'library.db') # /project/data/library.db
 
-HEADERS = {
+HEADERS = { #상수(불변값)
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
                   'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 }
